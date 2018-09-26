@@ -1,0 +1,86 @@
+<!DOCTYPE html><html lang="zh-Hans"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"><meta name="description" content="OpenSSH用户枚举漏洞：一探究竟"><meta name="keywords" content="Web Security"><meta name="author" content="Ginove,undefined"><meta name="copyright" content="Ginove"><title>OpenSSH用户枚举漏洞：一探究竟 | Ginove</title><link rel="shortcut icon" href="https://ginove-1252770243.cos.ap-guangzhou.myqcloud.com/%E8%B7%AF%E9%A3%9E/bitbug_favicon.ico"><link rel="stylesheet" href="/css/index.css?version=1.5.6"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css?version=1.5.6"><link rel="dns-prefetch" href="https://cdn.staticfile.org"><link rel="dns-prefetch" href="https://cdn.bootcss.com"><link rel="dns-prefetch" href="https://creativecommons.org"><link rel="dns-prefetch" href="https://cdn.jsdelivr.net"><link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/instantsearch.js@2.1.1/dist/instantsearch.min.css"><script src="https://cdn.jsdelivr.net/npm/instantsearch.js@2.1.1/dist/instantsearch.min.js" defer></script><script>var GLOBAL_CONFIG = { 
+  root: '/',
+  algolia: {"appId":"CH3QQ87I9H","apiKey":"1005940df08368eb06761af10c531247","indexName":"my-hexo-blog","hits":{"per_page":10},"languages":{"input_placeholder":"搜索文章","hits_empty":"找不到您查询的内容:${query}","hits_stats":"找到 ${hits} 条结果，用时 ${time} 毫秒"}},
+  localSearch: undefined,
+  copy: {
+    success: '复制成功',
+    error: '复制错误',
+    noSupport: '浏览器不支持'
+  }
+} </script></head><body><canvas class="fireworks"></canvas><i class="fa fa-arrow-right" id="toggle-sidebar" aria-hidden="true"></i><div id="sidebar"><div class="toggle-sidebar-info text-center"><span data-toggle="切换文章详情">切换站点概览</span><hr></div><div class="sidebar-toc"><div class="sidebar-toc__title">目录</div><div class="sidebar-toc__progress"><span class="progress-notice">你已经读了</span><span class="progress-num">0</span><span class="progress-percentage">%</span><div class="sidebar-toc__progress-bar"></div></div><div class="sidebar-toc__content"><ol class="toc"><li class="toc-item toc-level-3"><a class="toc-link" href="#介绍"><span class="toc-number">1.</span> <span class="toc-text">介绍</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#技术细节"><span class="toc-number">2.</span> <span class="toc-text">技术细节</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#漏洞总结"><span class="toc-number">3.</span> <span class="toc-text">漏洞总结</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#结论"><span class="toc-number">4.</span> <span class="toc-text">结论</span></a></li></ol></div></div><div class="author-info hide"><div class="author-info__avatar text-center"><img src="https://ginove-1252770243.cos.ap-guangzhou.myqcloud.com/%E8%B7%AF%E9%A3%9E/toui.jpg"></div><div class="author-info__name text-center">Ginove</div><div class="author-info__description text-center">Keep optimistic and Never give up</div><hr><div class="author-info-articles"><a class="author-info-articles__archives article-meta" href="/archives"><span class="pull-left">文章</span><span class="pull-right">23</span></a><a class="author-info-articles__tags article-meta" href="/tags"><span class="pull-left">标签</span><span class="pull-right">7</span></a></div></div></div><div id="content-outer"><div id="top-container" style="background-image: url(https://api.dujin.org/bing/1920.php)"><div id="page-header"><span class="pull-left"> <a id="site-name" href="/">Ginove</a></span><i class="fa fa-bars toggle-menu pull-right" aria-hidden="true"></i><span class="pull-right menus"><a class="site-page social-icon search"><i class="fa fa-search"></i><span> 搜索</span></a><a class="site-page" href="/">Home</a><a class="site-page" href="/archives">Archives</a><a class="site-page" href="/tags">Tags</a><a class="site-page" href="/about">About</a></span></div><div id="post-info"><div id="post-title">OpenSSH用户枚举漏洞：一探究竟</div><div id="post-meta"><time class="post-meta__date"><i class="fa fa-calendar" aria-hidden="true"></i> 2018-09-09</time></div></div></div><div class="layout" id="content-inner"><article id="post"><div class="article-container" id="post-content"><h3 id="介绍"><a href="#介绍" class="headerlink" title="介绍"></a>介绍</h3><p>OpenSSH用户枚举漏洞（CVE-2018-15473）是由<a href="https://github.com/openbsd/src/commit/779974d35b4859c07bc3cb8a12c74b43b0a7d1e0" target="_blank" rel="noopener">GitHub commit</a>公开的。</p>
+<p>这个漏洞虽然不会生成有效用户名的列表名单，但它允许猜测用户名。</p>
+<p>在这篇博客文章中，我们对这个漏洞进行了更深入的研究，并提出了缓解措施和监控措施。<br><a id="more"></a></p>
+<h3 id="技术细节"><a href="#技术细节" class="headerlink" title="技术细节"></a>技术细节</h3><p>该漏洞表现在OpenSSH的几个认证功能中。我们密切关注Ubuntu OpenSSH实现的公钥认证中的这个漏洞。</p>
+<p>通过向OpenSSH服务器发送格式错误的公钥认证消息，可以确定特定用户名的存在。如果用户不存在，则向客户端发送认证失败消息。如果用户存在，解析消息失败将中止通信：连接将在不发送任何消息的情况下关闭。此漏洞在Python的<a href="(http://www.openwall.com/lists/oss-security/2018/08/16/1">PoC</a>脚本中实现。</p>
+<p>该漏洞是因为在对消息进行完全解析之前，存在用户名不存在的通信。修复漏洞本质上是简单的：逆向逻辑。首先完全解析消息，然后进行通信。</p>
+<p>测试PoC的一种方法是在调试模式下启动OpenSSH服务器：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202329-57f49c2a-a6cf-1.png" alt="image.png"></p>
+<p>之后，使用已存在的用户名执行PoC脚本</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202329-580275c0-a6cf-1.png" alt="image.png"></p>
+<p>在服务器端，将会发生错误：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-581e9e30-a6cf-1.png" alt="image.png"></p>
+<p>也可以在/var/log/auth.log中找到这个错误：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-582a4f28-a6cf-1.png" alt="image.png"></p>
+<p>解析消息失败，导致客户端和服务器之间的连接关闭，而且没有来自服务器的消息：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-58402532-a6cf-1.png" alt="image.png"></p>
+<p>注意，最后一个报文是粉红色的（即客户端报文），没有后续的蓝色报文（即服务器报文）。</p>
+<p>当使用不存在的用户名来执行PoC脚本时：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-584a9544-a6cf-1.png" alt="image.png"></p>
+<p>没有出现“不完整消息”的错误信息：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-5865ab86-a6cf-1.png" alt="image.png"></p>
+<p>服务器向客户端发回消息：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-587dca7c-a6cf-1.png" alt="image.png"></p>
+<p>在通信结束时注意蓝色服务器报文。</p>
+<p>这就是如何利用公钥认证中的漏洞来揭露用户名的有效性。</p>
+<p>当然，OpenSSH的行为是在源代码中定义好的。函数<code>userauth_pubkey</code>是实现的身份验证功能之一，特别用于通过公钥进行身份验证。验证失败返回0，验证成功则返回1。当收到消息<code>SSH2_MSG_USERAUTH_REQUEST</code>（类型为publickey）时就会调用它，之后这个结果会被用来将消息<code>SSH2_MSG_USERAUTH_FAILURE</code>或<code>SSH2_MSG_USERAUTH_SUCCESS</code>发送回客户端。</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202330-58987372-a6cf-1.png" alt="image.png"></p>
+<p>该函数的逻辑如下：</p>
+<p>如果是未知用户名-&gt;0<br>如果是已知用户名，但密钥不正确-&gt;0<br>如果是已知用户名，并且密钥正确 -&gt;1</p>
+<p>一个<a href="http://seclists.org/oss-sec/2018/q3/136" target="_blank" rel="noopener">很聪明的人</a>想到的是，在步骤1和步骤2之间可以停止执行函数<code>userauth_pubkey</code>。步骤1后，函数<code>userauth_pubkey</code>从客户端发送的消息中检索字符串。如果这个失败，由于字符串格式错误，进程将停止并关闭连接，而不发送任何消息。</p>
+<p>这种情况可能是由函数<code>packet_get_string</code>导致的：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-58b7dc80-a6cf-1.png" alt="image.png"></p>
+<p>如果用户名存在，则在步骤1之后将从消息中提取字段。</p>
+<p>第一个字段为boolean（一个字节），使用<code>函数packet_get_char（）</code>提取。当认证类型为publickey时，该字段值等于1。接下来是2个字符串：算法和密钥。在SSH消息中，字符串会被编码为<code>长度-值</code>键值对。这个字符串由4个字节（即字符串的长度）组成，后面紧跟包含字符串内容的可变字节数。长度会被编码为bigendian（大端）格式，即先存放4字节整数的最高有效字节，然后是较低有效字节。</p>
+<p>函数<code>packet_get_string</code>从消息中提取并验证字符串, 即检查字符串的长度是否正确。但此功能依赖于其他项：</p>
+<p>函数<code>ssh_packet_get_string</code>的定义如下：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-58c27b86-a6cf-1.png" alt="image.png"></p>
+<p>函数<code>ssh_packet_get_string</code>会调用函数<code>sshpkt_get_string</code>，如果其返回值不为0，则调用函数<code>fatal</code>,而函数<code>fatal</code>会记录严重错误的事件，然后终止OpenSSH进程，且不发回任何消息。</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-58ce3e4e-a6cf-1.png" alt="image.png"></p>
+<p>现在我们来看看另一个函数链：函数<code>sshpkt_get_string</code>调用<code>sshbuf_get_string</code>：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-58d7ef70-a6cf-1.png" alt="image.png"></p>
+<p><code>sshbuf_get_string</code>调用<code>sshbuf_get_string_direct</code>：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-58e77c10-a6cf-1.png" alt="image.png"></p>
+<p><code>sshbuf_get_string_direct</code>调用<code>sshbuf_peek_string_direct</code>：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-58fd7b8c-a6cf-1.png" alt="image.png"></p>
+<p>最后，<code>sshbuf_peek_string_direct</code>函数实现字符串的验证：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-590e1686-a6cf-1.png" alt="image.png"></p>
+<p>如果消息中的剩余数据小于4个字节（不能包含字符串的长度），或者消息中的剩余数据小于消息的长度，则返回错误提示信息<code>SSH_ERR_MESSAGE_INCOMPLETE</code>（在日志中能找到）字符串。</p>
+<p>总结这一系列函数：当 <code>packet_get_string</code>用于从消息中提取字符串时，如果字符串格式错误，则会发生严重的异常，从而导致OpenSSH进程终止。</p>
+<p>这正是PoC Python脚本的触发条件。首先，它与OpenSSH服务器建立加密连接，然后发送格式错误的<code>SSH2_MSG_USERAUTH_REQUEST</code>（类型为publickey）消息。这个脚本将<code>Paramiko</code>的<code>add_boolean</code>函数重新定义为<code>NULL</code>函数。<code>Paramiko</code>是用于SSH通信的Python模块。通过重新定义<code>add_boolea</code>n函数，消息中省略了布尔字段（就在算法和关键字符串字段之前）。</p>
+<p>当函数<code>userauth_pubkey</code>解析这个格式错误的消息时，首先读取boolean字段。由于该字段实际上是丢失的，因此读取下一个字段的第一个字节（函数<code>packet_get_char</code>）：算法字符串的4字节长度的最高有效字节。调用下一个函数<code>packet_get_string</code>来读取（并验证）算法字符串。由于缺少boolean字段，毋庸置疑，这注定失败。</p>
+<p>以下是格式稍好的消息的解析过程：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-591d4372-a6cf-1.png" alt="image.png"></p>
+<p>格式错误的消息是缺少boolean值的，但解析函数并不知道这一点，于是它将字符串的第一个字节解析为boolean字段：看起来就像消息向左移一个字节：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202331-592b999a-a6cf-1.png" alt="image.png"></p>
+<p>结果就是解析了1907字节长的字符串（0x00000773十六进制），这比消息本身长。因此，函数<code>ssh_packet_get_string</code>将调用<code>fatal</code>函数，导致OpenSSH进程终止。</p>
+<h3 id="漏洞总结"><a href="#漏洞总结" class="headerlink" title="漏洞总结"></a>漏洞总结</h3><p>这是一个微妙的错误, 它不是关于缓冲区溢出导致远程代码执行或缺少输入验证的问题。</p>
+<p>没有缓冲区溢出，所有输入在使用前都要经过验证。这里的问题是输入验证是在一些功能处理已经发生了之后再发生的：可能出于性能原因，首先检查用户名以查看它是否存在，如果它不存在，那么进一步的输入验证和处理就毫无必要了。</p>
+<p>使用已经存在的用户名，将会进行输入验证，并且可以在不发送消息的情况下关闭连接。这可用于导出用户名的存在与否。</p>
+<p>这个问题的解决方案很简单：在任何功能处理之前，切换顺序并首先进行所有的输入验证。</p>
+<p>在其他身份验证功能中可能会出现相同的错误。一个粗略的，不完整的方法是检查表达式<code>！authctc-&gt; valid</code>，如下所示：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202332-593cf15e-a6cf-1.png" alt="image.png"></p>
+<p>在基于主机的身份验证中的确犯了同样的错误（可以在GitHub <a href="https://github.com/openbsd/src/commit/779974d35b4859c07bc3cb8a12c74b43b0a7d1e0" target="_blank" rel="noopener">commit</a>中看到）：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202332-59593ec2-a6cf-1.png" alt="image.png"></p>
+<p>以及Kerberos的身份验证：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202332-597649b8-a6cf-1.png" alt="image.png"></p>
+<p>并且潜在的SSH1的RSA身份验证（我们没有进一步检查，因为它不再存在于OpenBSD等实现中）：</p>
+<p><img src="https://xzfile.aliyuncs.com/media/upload/picture/20180823202332-5992aefa-a6cf-1.png" alt="image.png"></p>
+<p>请注意，这种风险万不可轻视！</p>
+<h3 id="结论"><a href="#结论" class="headerlink" title="结论"></a>结论</h3><p>您在使用OpenSSH的过程中，可以自己动手来减缓这个漏洞。在修补程序可用并部署之前，可以禁用易受攻击的身份验证机制。例如，通过禁用公钥身份验证，PoC脚本将不再有效，因为已经拒绝了格式错误的身份验证请求。</p>
+<p>当然，如果您不使用公钥认证，我们只建议您禁用公钥认证。如果您使用它，请不要切换到密码验证，但继续使用公钥验证！这不是远程执行代码漏洞，而是一个信息泄露漏洞。</p>
+<p>您还可以检查日志中是否有利用这个漏洞的迹象。致命错误可能是一个迹象。在Ubuntu上使用这个PoC，致命错误是“不完整的消息”。但是，此消息可能略有不同，具体得看您的OpenSSH版本，其他方法也可以生成格式错误的消息，这可能会导致另一个致命错误。例如，可以构造一个字符串长度超过最大允许值的身份验证请求。</p>
+<p>在默认配置中，您只会收到此致命错误。例如，客户端的IP地址将不会被记录。您可以通过将日志级别（LogLevel）从INFO级别提高到VERBOSE级别，从而创建额外的日志条目，其中包含客户端的IP地址。请注意，这将生成更大的日志，并且您应该随时留意日志不会超过您的可用容量。</p>
+<hr>
+<p>本文翻译自: <a href="https://blog.nviso.be/2018/08/21/openssh-user-enumeration-vulnerability-a-close-look/" target="_blank" rel="noopener">https://blog.nviso.be/2018/08/21/openssh-user-enumeration-vulnerability-a-close-look/</a></p>
+<hr>
+</div></article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta">文章作者: </span><span class="post-copyright-info"><a href="mailto:undefined">Ginove</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta">文章链接: </span><span class="post-copyright-info"><a href="https://ginove.github.io/2018/09/09/OpenSSH用户枚举漏洞：一探究竟/">https://ginove.github.io/2018/09/09/OpenSSH用户枚举漏洞：一探究竟/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta">版权声明: </span><span class="post-copyright-info">本博客所有文章除特别声明外，均采用 <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank">CC BY-NC-SA 4.0</a> 许可协议。转载请注明来自 <a href="https://ginove.github.io" target="_blank">Ginove</a>！</span></div></div><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Web-Security/">Web Security</a></div><nav id="pagination"><div class="prev-post pull-left"><a href="/2018/09/09/漏洞聚焦-CVE-2016-5072/"><i class="fa fa-chevron-left">  </i><span>漏洞聚焦: CVE-2016-5072</span></a></div><div class="next-post pull-right"><a href="/2018/09/09/沙箱逃逸-Microsoft-Office在MacOS上的应用/"><span>沙箱逃逸 - Microsoft Office在MacOS上的应用</span><i class="fa fa-chevron-right"></i></a></div></nav></div></div><footer><div class="layout" id="footer"><div class="copyright">&copy;2013 - 2018 By Ginove</div><div class="framework-info"><span>驱动 - </span><a href="http://hexo.io"><span>Hexo</span></a><span class="footer-separator">|</span><span>主题 - </span><a href="https://github.com/Molunerfinn/hexo-theme-melody"><span>Melody</span></a></div><div class="busuanzi"><script async src="//dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js"></script><span id="busuanzi_container_page_pv"><i class="fa fa-file-o"></i><span id="busuanzi_value_page_pv"></span><span></span></span></div></div></footer><i class="fa fa-arrow-up" id="go-up" aria-hidden="true"></i><script src="/js/third-party/anime.min.js"></script><script src="/js/third-party/jquery.min.js"></script><script src="/js/third-party/jquery.fancybox.min.js"></script><script src="/js/third-party/velocity.min.js"></script><script src="/js/third-party/velocity.ui.min.js"></script><script src="/js/utils.js?version=1.5.6"></script><script src="/js/fancybox.js?version=1.5.6"></script><script src="/js/sidebar.js?version=1.5.6"></script><script src="/js/copy.js?version=1.5.6"></script><script src="/js/fireworks.js?version=1.5.6"></script><script src="/js/transition.js?version=1.5.6"></script><script src="/js/scroll.js?version=1.5.6"></script><script src="/js/head.js?version=1.5.6"></script><script src="/js/search/algolia.js"></script><div class="search-dialog" id="algolia-search"><div class="search-dialog__title" id="algolia-search-title">Algolia</div><div id="algolia-input-panel"><div id="algolia-search-input"></div></div><hr><div id="algolia-search-results"><div id="algolia-hits"></div><div id="algolia-pagination"></div><div id="algolia-stats"></div></div><span class="search-close-button"><i class="fa fa-times"></i></span></div><div class="search-mask"></div></body></html>
